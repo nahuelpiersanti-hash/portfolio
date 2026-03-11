@@ -37,68 +37,49 @@ export function generateModulePositions(
 ): ModuleData[] {
   const modules: ModuleData[] = [];
 
-  // Module definitions by domain (45 total modules).
+  // Reemplazo: 32 módulos reales
   const baseModulesByDomain: Array<{
     domain: OperationalDomainId;
     label: string;
     size: ModuleSize;
   }> = [
-    // Operational Systems (8)
+    // Core
+    { domain: 'architecture', label: 'Systems Architecture', size: 'large' },
+    // Systems
     { domain: 'operational-systems', label: 'OVT Platform', size: 'large' },
-    { domain: 'operational-systems', label: 'Operations Engine', size: 'large' },
-    { domain: 'operational-systems', label: 'Runtime Cluster', size: 'large' },
-    { domain: 'operational-systems', label: 'Admin Suite', size: 'medium' },
-    { domain: 'operational-systems', label: 'Data Pipeline', size: 'medium' },
-    { domain: 'operational-systems', label: 'Command Mesh', size: 'medium' },
-    { domain: 'operational-systems', label: 'Analytics Core', size: 'small' },
-    { domain: 'operational-systems', label: 'Monitoring', size: 'small' },
-
-    // Platforms (7)
-    { domain: 'platforms', label: 'Platform Hub', size: 'large' },
-    { domain: 'platforms', label: 'Client Platform', size: 'medium' },
-    { domain: 'platforms', label: 'Content System', size: 'medium' },
-    { domain: 'platforms', label: 'Deployment Bus', size: 'medium' },
-    { domain: 'platforms', label: 'API Gateway', size: 'small' },
-    { domain: 'platforms', label: 'Auth Service', size: 'small' },
-    { domain: 'platforms', label: 'Media Service', size: 'small' },
-
-    // Websites (10)
-    { domain: 'websites', label: 'Experience Portal', size: 'large' },
-    { domain: 'websites', label: 'Navarro Site', size: 'medium' },
-    { domain: 'websites', label: 'Portfolio Template', size: 'medium' },
-    { domain: 'websites', label: 'Commerce Front', size: 'medium' },
-    { domain: 'websites', label: 'Restaurant Site', size: 'small' },
-    { domain: 'websites', label: 'Studio Landing', size: 'small' },
-    { domain: 'websites', label: 'Event Platform', size: 'small' },
+    { domain: 'operational-systems', label: 'Analytics Core', size: 'large' },
+    { domain: 'platforms', label: 'Experience Portal', size: 'large' },
+    { domain: 'operational-systems', label: 'Automation Layer', size: 'large' },
+    { domain: 'operational-systems', label: 'Operational Dashboard', size: 'large' },
+    // Capabilities
+    { domain: 'operational-systems', label: 'Data Pipelines', size: 'medium' },
+    { domain: 'operational-systems', label: 'Realtime Monitoring', size: 'medium' },
+    { domain: 'platforms', label: 'System Integrations', size: 'medium' },
+    { domain: 'platforms', label: 'Operational UX', size: 'medium' },
+    { domain: 'operational-systems', label: 'Automation Workflows', size: 'medium' },
+    { domain: 'architecture', label: 'GIS Interfaces', size: 'medium' },
+    { domain: 'platforms', label: 'Service Platforms', size: 'medium' },
+    { domain: 'platforms', label: 'API Systems', size: 'medium' },
+    { domain: 'architecture', label: 'Data Visualization', size: 'medium' },
+    { domain: 'architecture', label: 'Infrastructure Design', size: 'medium' },
+    // Projects
     { domain: 'websites', label: 'Agency Site', size: 'small' },
-    { domain: 'websites', label: 'Marketing Hub', size: 'small' },
-    { domain: 'websites', label: 'Campaign Microsite', size: 'small' },
-
-    // Experiments (7)
-    { domain: 'experiments', label: 'Generative Layout', size: 'small' },
-    { domain: 'experiments', label: 'Visual System Test', size: 'small' },
-    { domain: 'experiments', label: 'Grid Explorer', size: 'small' },
-    { domain: 'experiments', label: 'Signal Sandbox', size: 'small' },
-    { domain: 'experiments', label: 'Shader Lab', size: 'small' },
-    { domain: 'experiments', label: 'Motion Prototype', size: 'small' },
-    { domain: 'experiments', label: 'WebGL Prototypes', size: 'small' },
-
-    // Field Notes (6)
-    { domain: 'field-notes', label: 'System Notes', size: 'small' },
-    { domain: 'field-notes', label: 'Process Docs', size: 'small' },
+    { domain: 'websites', label: 'Commerce Front', size: 'small' },
+    { domain: 'operational-systems', label: 'Inspection System', size: 'small' },
+    { domain: 'operational-systems', label: 'Service Tracker', size: 'small' },
     { domain: 'field-notes', label: 'Ops Logbook', size: 'small' },
-    { domain: 'field-notes', label: 'Technical Journal', size: 'small' },
-    { domain: 'field-notes', label: 'Pattern Notes', size: 'small' },
-    { domain: 'field-notes', label: 'Research Archive', size: 'small' },
-
-    // Architecture (7)
-    { domain: 'architecture', label: 'Architecture Matrix', size: 'large' },
-    { domain: 'architecture', label: 'Inspection Tools', size: 'medium' },
-    { domain: 'architecture', label: 'Topology Engine', size: 'medium' },
-    { domain: 'architecture', label: 'Infra Patterns', size: 'medium' },
-    { domain: 'architecture', label: 'System Patterns', size: 'small' },
-    { domain: 'architecture', label: 'Design System', size: 'small' },
-    { domain: 'architecture', label: 'Reliability Grid', size: 'small' },
+    { domain: 'platforms', label: 'Navarro Platform', size: 'small' },
+    { domain: 'websites', label: 'Experience System', size: 'small' },
+    { domain: 'platforms', label: 'Analytics Portal', size: 'small' },
+    { domain: 'operational-systems', label: 'Service Automation', size: 'small' },
+    { domain: 'architecture', label: 'Data Explorer', size: 'small' },
+    { domain: 'operational-systems', label: 'Operations Console', size: 'small' },
+    { domain: 'field-notes', label: 'System Notes', size: 'small' },
+    // Meta
+    { domain: 'field-notes', label: 'Process', size: 'small' },
+    { domain: 'architecture', label: 'Architecture Method', size: 'small' },
+    { domain: 'field-notes', label: 'About', size: 'small' },
+    { domain: 'field-notes', label: 'Contact', size: 'small' },
   ];
 
   const targetCount = TARGET_MODULE_SCREENS;

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Group } from 'three';
 import { useFrame } from '@react-three/fiber';
 import { DomainSlice } from './DomainSlice';
@@ -32,11 +32,6 @@ interface PlanetSphereProps {
     maxScale: number;
     gapMinRatio: number;
     gapMaxRatio: number;
-  };
-  interactionTuning: {
-    focusLift: number;
-    energyFocus: number;
-    hierarchyFade: number;
   };
   modulePresets: Record<string, {
     enabled: boolean;
@@ -173,11 +168,11 @@ export function PlanetSphere({
   designMode,
   showNormals,
   shellTuning,
-  interactionTuning,
   modulePresets,
 }: PlanetSphereProps) {
   const coreRadius = 0.32;
   const groupRef = useRef<Group>(null);
+  const [corePulse, setCorePulse] = useState(0);
   const teslaImpactVersionRef = useRef(0);
   const teslaImpactRef = useRef<{
     point: { x: number; y: number; z: number };
@@ -217,14 +212,6 @@ export function PlanetSphere({
     },
     [modules, shellRadius]
   );
-  const selectedModulePosition = useMemo(() => {
-    if (!selectedModuleId) {
-      return null;
-    }
-
-    const selected = modules.find((module) => module.id === selectedModuleId);
-    return selected ? selected.position.clone() : null;
-  }, [modules, selectedModuleId]);
 
   const printMetrics = useCallback(() => {
     const runtimeModules = Array.from(runtimeMetricsRef.current.values()).sort((a, b) => {
@@ -361,7 +348,12 @@ export function PlanetSphere({
   return (
     <group ref={groupRef}>
       {/* Energy core at center (replaces large sphere) */}
-      <EnergyCore />
+      <EnergyCore
+        active={pulseIntensity > 0.8}
+        onBeat={(pulse) => {
+          setCorePulse(pulse);
+        }}
+      />
 
       {/* Very subtle infrastructure shell base */}
       <mesh>
@@ -384,8 +376,6 @@ export function PlanetSphere({
         channels={energyNetwork.channels}
         modulePositions={modules.map((m) => m.position)}
         coreRadius={coreRadius}
-        selectedModulePosition={selectedModulePosition}
-        focusIntensity={interactionTuning.energyFocus}
         onTeslaImpact={handleTeslaImpact}
         pulseIntensity={pulseIntensity}
         pulseTimeScale={pulseTimeScale}
@@ -402,9 +392,9 @@ export function PlanetSphere({
         designMode={designMode}
         showNormals={showNormals}
         shellTuning={shellTuning}
-        interactionTuning={interactionTuning}
         modulePresets={modulePresets}
         teslaImpactRef={teslaImpactRef}
+        corePulse={corePulse}
         onModuleHover={onModuleHover}
         onModuleSelect={onModuleSelect}
         onModuleMetrics={handleModuleMetrics}

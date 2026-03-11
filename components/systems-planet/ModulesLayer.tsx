@@ -1,6 +1,6 @@
 'use client';
 
-import { MutableRefObject, useMemo, useRef } from 'react';
+import { MutableRefObject, useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { ModuleNode } from './ModuleNode';
@@ -25,12 +25,6 @@ interface ShellTuning {
   gapMaxRatio: number;
 }
 
-interface InteractionTuning {
-  focusLift: number;
-  energyFocus: number;
-  hierarchyFade: number;
-}
-
 interface ModulesLayerProps {
   modules: ModuleData[];
   moduleInfluence: ModuleEnergyInfluence[];
@@ -41,7 +35,6 @@ interface ModulesLayerProps {
   designMode?: boolean;
   showNormals?: boolean;
   shellTuning?: Partial<ShellTuning>;
-  interactionTuning?: Partial<InteractionTuning>;
   modulePresets?: Record<string, {
     enabled: boolean;
     scale: { x: number; y: number; z: number };
@@ -52,8 +45,9 @@ interface ModulesLayerProps {
     pulse: number;
     version: number;
   } | null>;
-  onModuleHover: (moduleId: string | null) => void;
-  onModuleSelect: (moduleId: string) => void;
+    onModuleHover: (moduleId: string | null) => void;
+    corePulse?: number;
+    onModuleSelect: (moduleId: string) => void;
   onModuleMetrics?: (metrics: {
     id: string;
     position: { x: number; y: number; z: number };
@@ -111,12 +105,12 @@ export function ModulesLayer({
   designMode = false,
   showNormals = false,
   shellTuning,
-  interactionTuning,
-  modulePresets = {},
-  teslaImpactRef,
-  onModuleHover,
-  onModuleSelect,
-  onModuleMetrics,
+    modulePresets = {},
+    teslaImpactRef,
+    onModuleHover,
+    corePulse = 0,
+    onModuleSelect,
+    onModuleMetrics,
 }: ModulesLayerProps) {
   const baseRadius = useMemo(() => {
     if (modules.length === 0) {
@@ -126,10 +120,8 @@ export function ModulesLayer({
     return (avg + 0.05) * 1.05 * 1.12;
   }, [modules]);
 
-  const dynamicPositions = useMemo(
-    () => modules.map((module) => module.position.clone().normalize().multiplyScalar(baseRadius)),
-    [baseRadius, modules]
-  );
+  const dynamicPositionsRef = useRef<THREE.Vector3[]>([]);
+  const visualPositionsRef = useRef<THREE.Vector3[]>([]);
   const idealPositions = useMemo(
     () => modules.map((module) => module.position.clone().normalize().multiplyScalar(baseRadius)),
     [baseRadius, modules]
@@ -139,10 +131,11 @@ export function ModulesLayer({
   const radialKickRef = useRef<number[]>(modules.map(() => 0));
   const vibrationRef = useRef<number[]>(modules.map(() => 0));
   const lastImpactVersionRef = useRef(-1);
-  const interaction = useMemo<InteractionTuning>(
-    () => ({ focusLift: 1, energyFocus: 1, hierarchyFade: 1, ...(interactionTuning ?? {}) }),
-    [interactionTuning]
-  );
+
+  useEffect(() => {
+    dynamicPositionsRef.current = modules.map((module) => module.position.clone().normalize().multiplyScalar(baseRadius));
+    visualPositionsRef.current = modules.map((module) => module.position.clone().normalize().multiplyScalar(baseRadius));
+  }, [baseRadius, modules]);
 
   const relaxedModuleSizes = useMemo(() => {
     const tuning: ShellTuning = { ...DEFAULT_SHELL_TUNING, ...(shellTuning ?? {}) };
@@ -343,55 +336,6 @@ export function ModulesLayer({
     return anchors;
   }, [modules]);
 
-  const selectedModuleIndex = useMemo(() => {
-    if (!selectedModuleId) {
-      return -1;
-    }
-
-    return modules.findIndex((module) => module.id === selectedModuleId);
-  }, [modules, selectedModuleId]);
-
-  const selectedNeighborSet = useMemo(() => {
-    if (selectedModuleIndex < 0) {
-      return new Set<number>();
-    }
-
-    return new Set(modules[selectedModuleIndex]?.neighbors ?? []);
-  }, [modules, selectedModuleIndex]);
-
-  const applyActivationFocus = (positions: THREE.Vector3[], count: number) => {
-    if (selectedModuleIndex < 0 || selectedModuleIndex >= count) {
-      return;
-    }
-
-    const selectedDir = positions[selectedModuleIndex].clone().normalize();
-    const selectedLift = baseRadius * 0.085 * interaction.focusLift;
-    const neighborLift = baseRadius * 0.02 * interaction.focusLift;
-    const neighborSpread = baseRadius * 0.01 * interaction.focusLift;
-
-    positions[selectedModuleIndex]
-      .copy(selectedDir)
-      .multiplyScalar(baseRadius + selectedLift);
-
-    for (let i = 0; i < count; i++) {
-      if (!selectedNeighborSet.has(i) || i === selectedModuleIndex) {
-        continue;
-      }
-
-      const dir = positions[i].clone().normalize();
-      const away = dir
-        .clone()
-        .sub(selectedDir.clone().multiplyScalar(dir.dot(selectedDir)));
-
-      if (away.lengthSq() > 1e-8) {
-        away.normalize();
-      }
-
-      const focused = dir.clone().multiplyScalar(baseRadius + neighborLift).addScaledVector(away, neighborSpread);
-      positions[i].copy(focused.normalize().multiplyScalar(baseRadius + neighborLift));
-    }
-  };
-
   const handleDragStart = (moduleId: string) => {
     dragActiveIdRef.current = moduleId;
   };
@@ -406,7 +350,7 @@ export function ModulesLayer({
       return;
     }
 
-    const position = dynamicPositions[index];
+    const position = dynamicPositionsRef.current[index];
     position.x += deltaX * 0.01;
     position.y -= deltaY * 0.01;
     position.normalize().multiplyScalar(baseRadius);
@@ -423,22 +367,25 @@ export function ModulesLayer({
       return;
     }
 
-    const positions = dynamicPositions;
+    const positions = dynamicPositionsRef.current;
+    const renderedPositions = visualPositionsRef.current;
     const count = activeCount;
     if (count === 0) {
       return;
     }
+
+    const pulseOffset = 0.01 + corePulse * 0.01;
 
     // Ordered mode: keep strict brick layout without simulation drift.
     if (orderedMode) {
       for (let i = 0; i < count; i++) {
         const locked = idealPositions[i];
         positions[i].copy(locked);
+        const dir = locked.clone().normalize();
+        renderedPositions[i].copy(locked).addScaledVector(dir, pulseOffset * corePulse);
         radialKickRef.current[i] = THREE.MathUtils.lerp(radialKickRef.current[i] ?? 0, 0, 0.12);
         vibrationRef.current[i] = THREE.MathUtils.lerp(vibrationRef.current[i] ?? 0, 0, 0.12);
       }
-
-      applyActivationFocus(positions, count);
       return;
     }
 
@@ -659,6 +606,8 @@ export function ModulesLayer({
     for (let i = 0; i < count; i++) {
       if (dragActiveIdRef.current === modules[i].id) {
         positions[i].normalize().multiplyScalar(baseRadius);
+        const dragDir = positions[i].clone().normalize();
+        renderedPositions[i].copy(positions[i]).addScaledVector(dragDir, pulseOffset * corePulse);
         radialKickRef.current[i] = THREE.MathUtils.lerp(radialKickRef.current[i], 0, 0.08);
         vibrationRef.current[i] = THREE.MathUtils.lerp(vibrationRef.current[i], 0, 0.08);
         continue;
@@ -668,11 +617,10 @@ export function ModulesLayer({
       dir.lerp(idealDirs[i], damping).normalize();
       const kick = radialKickRef.current[i] ?? 0;
       positions[i].copy(dir.multiplyScalar(baseRadius)).addScaledVector(dir, kick);
+      renderedPositions[i].copy(positions[i]).addScaledVector(dir, pulseOffset * corePulse);
       radialKickRef.current[i] = THREE.MathUtils.lerp(kick, 0, 0.08);
       vibrationRef.current[i] = THREE.MathUtils.lerp(vibrationRef.current[i] ?? 0, 0, 0.08);
     }
-
-    applyActivationFocus(positions, count);
   });
 
   return (
@@ -696,36 +644,18 @@ export function ModulesLayer({
           xyPacking={moduleXyPacking[index]}
           presetScale={preset.scale}
           presetRotation={preset.rotation}
-          isActive={index === selectedModuleIndex}
-          visualAttenuation={(() => {
-            if (selectedModuleIndex < 0 || selectedModuleIndex >= modules.length) {
-              return 1;
-            }
-
-            if (index === selectedModuleIndex) {
-              return 1;
-            }
-
-            const selectedDir = idealPositions[selectedModuleIndex].clone().normalize();
-            const currentDir = idealPositions[index].clone().normalize();
-            const dot = THREE.MathUtils.clamp(selectedDir.dot(currentDir), -1, 1);
-            const angle = Math.acos(dot);
-            const t = THREE.MathUtils.clamp((angle - 0.2) / 1.2, 0, 1);
-            const nearAttenuation = THREE.MathUtils.lerp(1, 0.82, interaction.hierarchyFade);
-            const farAttenuation = THREE.MathUtils.lerp(1, 0.58, interaction.hierarchyFade);
-            return THREE.MathUtils.lerp(nearAttenuation, farAttenuation, t);
-          })()}
           impactVibration={vibrationRef.current[index] ?? 0}
           energyNearby={moduleInfluence[index]?.affinity ?? 0}
           energyPhase={moduleInfluence[index]?.phase ?? 0}
           onHover={onModuleHover}
           onSelect={onModuleSelect}
           onMetricsReady={onModuleMetrics}
-          dynamicPosition={dynamicPositions[index]}
+          dynamicPosition={visualPositionsRef.current[index] ?? dynamicPositionsRef.current[index] ?? module.position}
           showNormals={showNormals}
           onDragStart={handleDragStart}
           onDragMove={handleDragMove}
           onDragEnd={handleDragEnd}
+          corePulse={corePulse}
         />
           );
         })()

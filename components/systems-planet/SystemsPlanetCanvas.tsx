@@ -27,17 +27,11 @@ interface SystemsPlanetCanvasProps {
     gapMinRatio: number;
     gapMaxRatio: number;
   };
-  interactionTuning: {
-    focusLift: number;
-    energyFocus: number;
-    hierarchyFade: number;
-  };
   modulePresets: Record<string, {
     enabled: boolean;
     scale: { x: number; y: number; z: number };
     rotation: { x: number; y: number; z: number };
   }>;
-  lockOrbitControls?: boolean;
 }
 
 export function SystemsPlanetCanvas({ 
@@ -55,9 +49,7 @@ export function SystemsPlanetCanvas({
   designMode,
   showNormals,
   shellTuning,
-  interactionTuning,
   modulePresets,
-  lockOrbitControls = false,
 }: SystemsPlanetCanvasProps) {
   return (
     <Canvas
@@ -102,13 +94,11 @@ export function SystemsPlanetCanvas({
         designMode={designMode}
         showNormals={showNormals}
         shellTuning={shellTuning}
-        interactionTuning={interactionTuning}
         modulePresets={modulePresets}
       />
 
       {/* Controls - optimized for smooth interaction */}
       <OrbitControls
-        enabled={!lockOrbitControls}
         enableZoom={true}
         enablePan={false}
         minDistance={2.35}

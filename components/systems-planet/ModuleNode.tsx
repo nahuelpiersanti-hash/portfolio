@@ -22,12 +22,11 @@ interface ModuleNodeProps {
   xyPacking?: { x: number; y: number };
   presetScale?: { x: number; y: number; z: number };
   presetRotation?: { x: number; y: number; z: number };
-  isActive?: boolean;
-  visualAttenuation?: number;
   showNormals?: boolean;
   impactVibration: number;
   energyNearby: number;
   energyPhase: number;
+  corePulse: number;
   onHover: (moduleId: string | null) => void;
   onSelect: (moduleId: string) => void;
   dynamicPosition: THREE.Vector3;
@@ -81,12 +80,11 @@ export function ModuleNode({
   xyPacking = { x: 1, y: 1 },
   presetScale = { x: 1, y: 1, z: 1 },
   presetRotation = { x: 0, y: 0, z: 0 },
-  isActive = false,
-  visualAttenuation = 1,
   showNormals = false,
   impactVibration,
   energyNearby,
   energyPhase,
+  corePulse,
   onHover,
   onSelect,
   dynamicPosition,
@@ -99,10 +97,7 @@ export function ModuleNode({
   const [hovered, setHovered] = useState(false);
   const [dragging, setDragging] = useState(false);
   const targetPositionRef = useRef(new THREE.Vector3());
-  const lookMatrixRef = useRef(new THREE.Matrix4());
-  const cameraQuatRef = useRef(new THREE.Quaternion());
   const lastPointerRef = useRef<{ x: number; y: number } | null>(null);
-  const pointerDownRef = useRef<{ x: number; y: number; ctrl: boolean } | null>(null);
   const metricsReportedRef = useRef(false);
   const labelText = useMemo(() => String(Number(module.id.replace('module-', ''))), [module.id]);
   const faceNumberTexture = useMemo(() => createFaceNumberTexture(labelText), [labelText]);
@@ -185,7 +180,7 @@ export function ModuleNode({
   }, [dragging, module.id, onDragEnd, onDragMove]);
 
   // Idle animation + hover effect
-  useFrame(({ clock, camera }) => {
+  useFrame(({ clock }) => {
     if (meshRef.current) {
       const time = clock.getElapsedTime();
 
@@ -199,16 +194,9 @@ export function ModuleNode({
       // Manual local orientation offset (twist) around module normal.
       meshRef.current.rotateZ(presetRotation.z);
 
-      // Active module slightly presents itself toward camera while keeping reactor context.
-      if (isActive) {
-        lookMatrixRef.current.lookAt(meshRef.current.position, camera.position, new THREE.Vector3(0, 1, 0));
-        cameraQuatRef.current.setFromRotationMatrix(lookMatrixRef.current);
-        meshRef.current.quaternion.slerp(cameraQuatRef.current, 0.08);
-      }
-
-      // Tesla impacts add subtle shell flex vibration scaled by core pulse.
-      const corePulse = 0.5 + Math.sin(time * 2.5) * 0.5;
-      const vib = impactVibration * corePulse;
+      // Tesla impacts add subtle shell flex vibration scaled by local sine.
+      const vibPulse = 0.5 + Math.sin(time * 2.5) * 0.5;
+      const vib = impactVibration * vibPulse;
       meshRef.current.rotateZ(
         Math.sin(time * 30 + Number(module.id.replace('module-', '')) * 0.13) * 0.002 * vib
       );
@@ -254,26 +242,22 @@ export function ModuleNode({
       const crackReflection = Math.sin(time * 0.4) * 0.05 + 0.15;
       const passingEnergy = Math.max(0, Math.sin(time * 0.95 - energyPhase * 1.3)) * (0.14 * energyNearby);
       const nearbyEnergy = energyNearby * 0.1;
+      const posLen = dynamicPosition.length();
+      const frontFactor = posLen > 0.001
+        ? THREE.MathUtils.clamp((dynamicPosition.z / posLen + 1) / 2, 0, 1)
+        : 0.5;
+      const beatEmissive = corePulse * 0.1 * frontFactor;
       const material = meshRef.current.material;
-      const baseEmissive = hovered ? 0.42 : (crackReflection + nearbyEnergy + passingEnergy) * 0.62;
-      material.emissiveIntensity = isActive
-        ? Math.max(baseEmissive, 0.34)
-        : baseEmissive * visualAttenuation;
+      material.emissiveIntensity = hovered ? 0.42 : (crackReflection + nearbyEnergy + passingEnergy + beatEmissive) * 0.62;
     }
   });
 
   const handlePointerDown = (e: ThreeEvent<PointerEvent>) => {
-    e.stopPropagation();
-    pointerDownRef.current = {
-      x: e.clientX,
-      y: e.clientY,
-      ctrl: e.ctrlKey,
-    };
-
     if (!e.ctrlKey) {
       return;
     }
 
+    e.stopPropagation();
     setDragging(true);
     onSelect(module.id);
     onDragStart?.(module.id);
@@ -284,26 +268,11 @@ export function ModuleNode({
   };
 
   const handlePointerUp = (e: ThreeEvent<PointerEvent>) => {
-    e.stopPropagation();
-
-    const down = pointerDownRef.current;
-    pointerDownRef.current = null;
-
-    if (down && !down.ctrl) {
-      const dx = e.clientX - down.x;
-      const dy = e.clientY - down.y;
-      const moved = Math.hypot(dx, dy);
-
-      // Select only if the pointer ended as a click on the same module.
-      if (moved < 6) {
-        onSelect(module.id);
-      }
-    }
-
     if (!dragging) {
       return;
     }
 
+    e.stopPropagation();
     setDragging(false);
     lastPointerRef.current = null;
     onDragEnd?.(module.id);
@@ -317,7 +286,24 @@ export function ModuleNode({
         position={module.position}
         castShadow
         receiveShadow
-        raycast={() => null}
+        onPointerDown={handlePointerDown}
+        onPointerUp={handlePointerUp}
+        onPointerOver={(e) => {
+          e.stopPropagation();
+          setHovered(true);
+          onHover(module.id);
+        }}
+        onPointerOut={(e) => {
+          e.stopPropagation();
+          if (!dragging) {
+            setHovered(false);
+            onHover(null);
+          }
+        }}
+        onClick={(e) => {
+          e.stopPropagation();
+          onSelect(module.id);
+        }}
       >
         <meshStandardMaterial
           color={panelColors.base}
@@ -338,40 +324,41 @@ export function ModuleNode({
           />
         </lineSegments>
 
+        {/* Marco interior */}
+        <mesh
+          position={[0, 0, 0.06]} // Ligeramente hacia afuera
+          scale={[0.75, 0.75, 1]}
+          renderOrder={3}
+        >
+          <primitive attach="geometry" object={geometry} />
+          <meshBasicMaterial
+            color={"#22d3ee"}
+            transparent
+            opacity={0.15 + 0.1 * corePulse}
+            depthWrite={false}
+            toneMapped={false}
+          />
+        </mesh>
+
+        {/* Placa central */}
+        <mesh
+          position={[0, 0, 0.03]} // Ligeramente hundida
+          scale={[0.55, 0.55, 1]}
+          renderOrder={4}
+        >
+          <primitive attach="geometry" object={geometry} />
+          <meshBasicMaterial
+            color={"#0d1117"}
+            transparent
+            opacity={0.98}
+            depthWrite={false}
+            toneMapped={false}
+          />
+        </mesh>
+
         <mesh position={[0, 0, -0.515]} rotation={[0, Math.PI, 0]} renderOrder={2}>
           <planeGeometry args={[0.48, 0.48]} />
           <meshBasicMaterial map={faceNumberTexture} transparent depthWrite={false} />
-        </mesh>
-        {/* Dedicated frontal hit surface for precise picking. */}
-        <mesh
-          position={[0, 0, -0.56]}
-          rotation={[0, Math.PI, 0]}
-          renderOrder={3}
-          onPointerDown={handlePointerDown}
-          onPointerUp={handlePointerUp}
-          onPointerOver={(e) => {
-            e.stopPropagation();
-            setHovered(true);
-            onHover(module.id);
-          }}
-          onPointerMove={(e) => {
-            e.stopPropagation();
-          }}
-          onPointerOut={(e) => {
-            e.stopPropagation();
-            if (!dragging) {
-              setHovered(false);
-              onHover(null);
-            }
-          }}
-        >
-          <planeGeometry args={[1.28, 1.28]} />
-          <meshBasicMaterial
-            transparent
-            opacity={0}
-            side={THREE.DoubleSide}
-            depthWrite={false}
-          />
         </mesh>
       </mesh>
 

@@ -10,8 +10,6 @@ interface EnergyCracksLayerProps {
   channels: EnergyChannel[];
   modulePositions: THREE.Vector3[];
   coreRadius: number;
-  selectedModulePosition?: THREE.Vector3 | null;
-  focusIntensity?: number;
   onTeslaImpact?: (gapPoint: { x: number; y: number; z: number }, pulse: number) => void;
   pulseIntensity?: number;
   pulseTimeScale?: number;
@@ -46,122 +44,6 @@ function getCorePulse(time: number, intensity: number, timeScale: number): numbe
   const slowRise = eased * eased;
   const raw = 0.22 + slowRise * 0.34;
   return THREE.MathUtils.clamp(raw * intensity, 0.08, 1.0);
-}
-
-function getFocusFactor(point: THREE.Vector3, selectedModulePosition?: THREE.Vector3 | null): number {
-  if (!selectedModulePosition) {
-    return 0;
-  }
-
-  const a = point.clone().normalize();
-  const b = selectedModulePosition.clone().normalize();
-  const dot = THREE.MathUtils.clamp(a.dot(b), -1, 1);
-  const angle = Math.acos(dot);
-  const t = THREE.MathUtils.clamp(1 - angle / 0.8, 0, 1);
-  return t * t * t;
-}
-
-function DirectedCorePulse({
-  coreRadius,
-  selectedModulePosition,
-  pulseIntensity,
-  pulseTimeScale,
-  focusIntensity,
-}: {
-  coreRadius: number;
-  selectedModulePosition?: THREE.Vector3 | null;
-  pulseIntensity: number;
-  pulseTimeScale: number;
-  focusIntensity: number;
-}) {
-  const points = useMemo(() => {
-    if (!selectedModulePosition) {
-      return [] as THREE.Vector3[];
-    }
-
-    const dir = selectedModulePosition.clone().normalize();
-    const start = dir.clone().multiplyScalar(coreRadius * 1.07);
-    const end = selectedModulePosition.clone().multiplyScalar(0.98);
-    const mid = start.clone().lerp(end, 0.5);
-    const tangent = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0));
-    if (tangent.lengthSq() > 1e-8) {
-      tangent.normalize();
-    }
-
-    const c1 = mid.clone().addScaledVector(tangent, 0.05);
-    const curve = new THREE.CatmullRomCurve3([start, c1, end], false, 'catmullrom', 0.45);
-    return curve.getPoints(28);
-  }, [coreRadius, selectedModulePosition]);
-
-  const glowGeometry = useMemo(() => new THREE.BufferGeometry(), []);
-  const coreGeometry = useMemo(() => new THREE.BufferGeometry(), []);
-  const glowMaterial = useMemo(
-    () =>
-      new THREE.LineBasicMaterial({
-        color: '#53dcff',
-        transparent: true,
-        opacity: 0.4,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-      }),
-    []
-  );
-  const coreMaterial = useMemo(
-    () =>
-      new THREE.LineBasicMaterial({
-        color: '#d4f6ff',
-        transparent: true,
-        opacity: 0.65,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-      }),
-    []
-  );
-  const glowLine = useMemo(() => new THREE.Line(glowGeometry, glowMaterial), [glowGeometry, glowMaterial]);
-  const coreLine = useMemo(() => new THREE.Line(coreGeometry, coreMaterial), [coreGeometry, coreMaterial]);
-
-  useEffect(() => {
-    return () => {
-      glowGeometry.dispose();
-      coreGeometry.dispose();
-      glowMaterial.dispose();
-      coreMaterial.dispose();
-    };
-  }, [coreGeometry, coreMaterial, glowGeometry, glowMaterial]);
-
-  useEffect(() => {
-    if (points.length === 0) {
-      glowGeometry.setDrawRange(0, 0);
-      coreGeometry.setDrawRange(0, 0);
-      return;
-    }
-
-    glowGeometry.setFromPoints(points);
-    coreGeometry.setFromPoints(points);
-  }, [coreGeometry, glowGeometry, points]);
-
-  useFrame(({ clock }) => {
-    if (!selectedModulePosition) {
-      return;
-    }
-
-    const pulse = getCorePulse(clock.getElapsedTime(), pulseIntensity, pulseTimeScale);
-    const gain = THREE.MathUtils.clamp(focusIntensity, 0, 3);
-
-    glowMaterial.opacity = (0.25 + pulse * 0.55) * (0.55 + gain * 0.45);
-    coreMaterial.opacity = (0.45 + pulse * 0.42) * (0.5 + gain * 0.5);
-  });
-
-  if (!selectedModulePosition || points.length === 0) {
-    return null;
-  }
-
-  return (
-    <group name="directed-core-pulse">
-      <primitive object={glowLine} />
-      <primitive object={coreLine} />
-    </group>
-  );
 }
 
 function buildTeslaPoints(
@@ -203,15 +85,11 @@ function GapVolumetricPlanes({
   maxDistance,
   pulseIntensity,
   pulseTimeScale,
-  selectedModulePosition,
-  focusIntensity,
 }: {
   gapPoints: GapPoint[];
   maxDistance: number;
   pulseIntensity: number;
   pulseTimeScale: number;
-  selectedModulePosition?: THREE.Vector3 | null;
-  focusIntensity: number;
 }) {
   const meshRefs = useRef<Array<THREE.Mesh | null>>([]);
 
@@ -226,10 +104,9 @@ function GapVolumetricPlanes({
           width: 0.18 + (i % 5) * 0.014,
           height: 0.07 + (i % 3) * 0.01,
           phase: i * 0.37,
-          focus: getFocusFactor(gap.position, selectedModulePosition),
         };
       }),
-    [gapPoints, selectedModulePosition]
+    [gapPoints]
   );
 
   useFrame(({ clock }) => {
@@ -245,7 +122,7 @@ function GapVolumetricPlanes({
 
       const dist = plane.position.length();
       const proximity = 1 - THREE.MathUtils.clamp(dist / maxDistance, 0, 1);
-      const energy = pulse * (0.2 + proximity * 0.4 + plane.focus * 2.2 * focusIntensity);
+      const energy = pulse * (0.3 + proximity * 0.7);
       const flicker = 0.9 + Math.sin(time * 6 + plane.phase) * 0.1;
 
       mesh.position.copy(plane.position);
@@ -289,15 +166,11 @@ function GapPlasmaParticles({
   maxDistance,
   pulseIntensity,
   pulseTimeScale,
-  selectedModulePosition,
-  focusIntensity,
 }: {
   gapPoints: GapPoint[];
   maxDistance: number;
   pulseIntensity: number;
   pulseTimeScale: number;
-  selectedModulePosition?: THREE.Vector3 | null;
-  focusIntensity: number;
 }) {
   const particleCount = Math.min(140, Math.max(24, gapPoints.length * 3));
 
@@ -368,22 +241,7 @@ function GapPlasmaParticles({
       return;
     }
 
-    const focusBiasChance = THREE.MathUtils.clamp(0.35 + 0.37 * focusIntensity, 0, 0.95);
-    if (selectedModulePosition && Math.random() < focusBiasChance) {
-      let bestIndex = 0;
-      let bestScore = -1;
-      for (let i = 0; i < gapPoints.length; i++) {
-        const score = getFocusFactor(gapPoints[i].position, selectedModulePosition);
-        if (score > bestScore) {
-          bestScore = score;
-          bestIndex = i;
-        }
-      }
-      state.gapIndex = bestIndex;
-    } else {
-      state.gapIndex = Math.floor(Math.random() * gapPoints.length);
-    }
-
+    state.gapIndex = Math.floor(Math.random() * gapPoints.length);
     state.progress = 0;
     state.speed = 0.7 + Math.random() * 0.9;
   };
@@ -393,7 +251,7 @@ function GapPlasmaParticles({
       return;
     }
     statesRef.current.forEach((state) => respawn(state));
-  }, [gapPoints, selectedModulePosition]);
+  }, [gapPoints]);
 
   useFrame(({ clock }, delta) => {
     if (gapPoints.length === 0) {
@@ -421,8 +279,7 @@ function GapPlasmaParticles({
 
       const dist = point.length();
       const proximity = 1 - THREE.MathUtils.clamp(dist / maxDistance, 0, 1);
-      const focus = getFocusFactor(gap.position, selectedModulePosition);
-      const energy = pulse * (0.22 + proximity * 0.38 + focus * 2.15 * focusIntensity);
+      const energy = pulse * (0.3 + proximity * 0.7);
       const alpha = (1 - state.progress) * 0.55 * energy;
 
       positions.setXYZ(i, point.x, point.y, point.z);
@@ -566,15 +423,11 @@ function GapCrackLines({
   maxDistance,
   pulseIntensity,
   pulseTimeScale,
-  selectedModulePosition,
-  focusIntensity,
 }: {
   gapPoints: GapPoint[];
   maxDistance: number;
   pulseIntensity: number;
   pulseTimeScale: number;
-  selectedModulePosition?: THREE.Vector3 | null;
-  focusIntensity: number;
 }) {
   const crackObjects = useMemo(() => {
     return gapPoints.map((gap, index) => {
@@ -632,10 +485,8 @@ function GapCrackLines({
       }
 
       const proximity = proximityAccum / Math.max(1, positions.count);
-      const centroid = gapPoints[i]?.position;
-      const focus = centroid ? getFocusFactor(centroid, selectedModulePosition) : 0;
-      const energy = pulse * (0.24 + proximity * 0.38 + focus * 2.45 * focusIntensity);
-      entry.material.opacity = (0.34 + pulse * 0.88 + Math.sin(time * 4 + i * 0.37) * 0.04) * energy;
+      const energy = pulse * (0.3 + proximity * 0.7);
+      entry.material.opacity = (0.3 + pulse * 0.7 + Math.sin(time * 4 + i * 0.37) * 0.04) * energy;
     });
   });
 
@@ -652,8 +503,6 @@ function TeslaCoilArcs({
   gapPoints,
   coreRadius,
   maxDistance,
-  selectedModulePosition,
-  focusIntensity,
   onTeslaImpact,
   pulseIntensity,
   pulseTimeScale,
@@ -661,8 +510,6 @@ function TeslaCoilArcs({
   gapPoints: GapPoint[];
   coreRadius: number;
   maxDistance: number;
-  selectedModulePosition?: THREE.Vector3 | null;
-  focusIntensity: number;
   onTeslaImpact?: (gapPoint: { x: number; y: number; z: number }, pulse: number) => void;
   pulseIntensity: number;
   pulseTimeScale: number;
@@ -688,22 +535,7 @@ function TeslaCoilArcs({
 
     state.life = 0;
     state.ttl = 0.2 + Math.random() * 0.2;
-    const focusBiasChance = THREE.MathUtils.clamp(0.38 + 0.4 * focusIntensity, 0, 0.96);
-    if (selectedModulePosition && Math.random() < focusBiasChance) {
-      let bestIndex = 0;
-      let bestScore = -1;
-      for (let i = 0; i < gapPoints.length; i++) {
-        const score = getFocusFactor(gapPoints[i].position, selectedModulePosition);
-        if (score > bestScore) {
-          bestScore = score;
-          bestIndex = i;
-        }
-      }
-      state.targetIndex = bestIndex;
-    } else {
-      state.targetIndex = Math.floor(Math.random() * gapPoints.length);
-    }
-
+    state.targetIndex = Math.floor(Math.random() * gapPoints.length);
     state.seed = Math.random() * 1000;
     state.opacity = 1;
 
@@ -783,7 +615,7 @@ function TeslaCoilArcs({
     statesRef.current.forEach((state) => {
       respawnArc(state);
     });
-  }, [gapPoints, selectedModulePosition]);
+  }, [gapPoints]);
 
   const updateGeometry = (geometry: THREE.BufferGeometry, points: THREE.Vector3[]) => {
     const positions = geometry.attributes.position as THREE.BufferAttribute;
@@ -858,9 +690,7 @@ function TeslaCoilArcs({
       state.opacity *= 0.96;
       const lifeFade = THREE.MathUtils.clamp(state.opacity, 0, 1);
       const proximity = proximityAccum / Math.max(1, trunkPoints.length);
-      const targetGap = gapPoints[state.targetIndex]?.position;
-      const focus = targetGap ? getFocusFactor(targetGap, selectedModulePosition) : 0;
-      const energy = pulse * (0.24 + proximity * 0.34 + focus * 2.7 * focusIntensity);
+      const energy = pulse * (0.3 + proximity * 0.7);
       entry.glowMaterial.opacity = (0.24 + pulse * 0.46) * lifeFade * energy;
       entry.coreMaterial.opacity = (0.62 + pulse * 0.32) * lifeFade * energy;
     });
@@ -884,8 +714,6 @@ export function EnergyCracksLayer({
   channels,
   modulePositions,
   coreRadius,
-  selectedModulePosition,
-  focusIntensity = 1,
   onTeslaImpact,
   pulseIntensity = 1,
   pulseTimeScale = 1,
@@ -899,13 +727,6 @@ export function EnergyCracksLayer({
 
   return (
     <group name="energy-cracks-layer">
-      <DirectedCorePulse
-        coreRadius={coreRadius}
-        selectedModulePosition={selectedModulePosition}
-        pulseIntensity={pulseIntensity}
-        pulseTimeScale={pulseTimeScale}
-        focusIntensity={focusIntensity}
-      />
       <CoreEnergyHalo
         coreRadius={coreRadius}
         pulseIntensity={pulseIntensity}
@@ -924,23 +745,17 @@ export function EnergyCracksLayer({
         maxDistance={maxDistance}
         pulseIntensity={pulseIntensity}
         pulseTimeScale={pulseTimeScale}
-        selectedModulePosition={selectedModulePosition}
-        focusIntensity={focusIntensity}
       />
       <GapCrackLines
         gapPoints={gapPoints}
         maxDistance={maxDistance}
         pulseIntensity={pulseIntensity}
         pulseTimeScale={pulseTimeScale}
-        selectedModulePosition={selectedModulePosition}
-        focusIntensity={focusIntensity}
       />
       <TeslaCoilArcs
         gapPoints={gapPoints}
         coreRadius={coreRadius}
         maxDistance={maxDistance}
-        selectedModulePosition={selectedModulePosition}
-        focusIntensity={focusIntensity}
         onTeslaImpact={onTeslaImpact}
         pulseIntensity={pulseIntensity}
         pulseTimeScale={pulseTimeScale}
@@ -950,8 +765,6 @@ export function EnergyCracksLayer({
         maxDistance={maxDistance}
         pulseIntensity={pulseIntensity}
         pulseTimeScale={pulseTimeScale}
-        selectedModulePosition={selectedModulePosition}
-        focusIntensity={focusIntensity}
       />
     </group>
   );
