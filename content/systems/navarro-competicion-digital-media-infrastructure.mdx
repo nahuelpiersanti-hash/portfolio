@@ -1,0 +1,147 @@
+---
+title: "Navarro Competicion - Digital Media Infrastructure"
+slug: "navarro-competicion-digital-media-infrastructure"
+domain: "Digital Media Operations"
+status: "In operation"
+scope: "System design and operational implementation"
+lastReviewed: "2026-03-06"
+---
+
+## 1. System Overview
+
+Navarro Competicion - Digital Media Infrastructure is an operational system for managing motorsport media production across race weekends and between-event publishing cycles.
+
+The system was designed to structure how content requests, capture tasks, editing queues, approvals, and publication outputs move across a small team with variable workload peaks.
+
+This was not only a content management problem. It was an operational coordination problem across people, timing constraints, and delivery standards.
+
+## 2. Operational Context
+
+The operational environment combined:
+- high-intensity event windows (race weekends)
+- low-intensity but continuous publication windows (between events)
+- multiple content formats (short clips, long edits, social assets, sponsor deliverables)
+- dependencies between capture, edit, approval, and distribution
+
+Before intervention, work moved through direct messages, informal checklists, and verbal prioritization. This worked at low volume but became fragile during event peaks, especially when deadlines overlapped and priorities shifted quickly.
+
+Key constraints:
+- small team with shared roles
+- deadlines tied to race calendar and sponsor commitments
+- changing priorities during live events
+- quality expectations that required approval checkpoints
+
+## 3. Failure Modes (Before the System)
+
+Observed failure modes were mostly structural, not individual:
+- Request ambiguity: incoming requests lacked a consistent intake format.
+- Queue opacity: no reliable view of what was waiting, in progress, blocked, or approved.
+- Priority drift: urgent items were handled ad hoc, displacing planned work without traceability.
+- Approval bottlenecks: assets waited for review with no explicit SLA or escalation path.
+- Rework loops: edits were repeated due to missing version and decision history.
+
+Operationally, this produced inconsistent turnaround times and reduced predictability during high-load periods.
+
+## 4. Structural Analysis
+
+Analysis focused on identifying stable operational primitives.
+
+Core domains:
+- Request Intake
+- Production Pipeline
+- Review and Approval
+- Publication and Archive
+
+Key entities:
+- Content Request
+- Asset Package
+- Revision
+- Approval Decision
+- Publication Slot
+
+Primary flow modeled as state transitions:
+1. Requested
+2. Qualified
+3. In Production
+4. In Review
+5. Approved
+6. Scheduled
+7. Published
+8. Archived
+
+Critical interfaces were mapped at handoff points:
+- intake to production (requirements completeness)
+- production to review (deliverable quality and version integrity)
+- review to publication (approval state and scheduling readiness)
+
+The main analytical conclusion was that delays came less from editing effort and more from ambiguous handoffs and invisible queue states.
+
+## 5. System Design
+
+Design decisions emphasized operational clarity over feature breadth.
+
+System modules:
+- Intake Module: structured request capture with required fields.
+- Pipeline Module: state-based tracking for each asset package.
+- Review Module: explicit approval decisions with revision notes.
+- Scheduling Module: publication calendar with dependency checks.
+- Traceability Module: revision history and decision log.
+
+Structural decisions:
+- One canonical work object: `Asset Package`.
+- Explicit state machine shared by all team roles.
+- Required metadata at intake to reduce downstream clarification loops.
+- Defined review checkpoints to avoid informal approval paths.
+- Exception path for urgent race-day requests with audit trail.
+
+Trade-offs:
+- More upfront intake structure in exchange for less downstream rework.
+- Slightly slower submission for simple tasks in exchange for predictable handoffs.
+- Limited customization per request type in exchange for consistent queue behavior.
+
+## 6. Operational Artifacts
+
+The system produced artifacts used for operation and governance:
+- State diagram for the asset lifecycle (Requested -> Archived).
+- Domain boundary map clarifying module ownership.
+- Interface table defining required fields and acceptance criteria for each handoff.
+- Daily operational flow for race-day and post-race publishing windows.
+- Revision and approval log format used as decision record.
+- Lightweight runbook for intake standards and escalation rules.
+
+These artifacts were used as working references, not presentation materials.
+
+## 7. Implementation
+
+Implementation was done incrementally to avoid operational disruption:
+- phase 1: map existing workflow and define shared states
+- phase 2: introduce structured intake and queue visibility
+- phase 3: add review controls and revision traceability
+- phase 4: stabilize event-day exception handling
+
+The approach prioritized adoption by the operating team over rapid feature expansion. Existing practices were not replaced all at once; they were progressively formalized where variability caused repeated failure.
+
+## 8. Operational Impact
+
+After stabilization, observed improvements included:
+- clearer queue visibility across active and blocked items
+- reduced approval latency due to explicit review checkpoints
+- fewer duplicate revisions due to version traceability
+- better race-weekend predictability through explicit urgent-request path
+
+Measured over a representative period:
+- average request-to-publish cycle time reduced by approximately 30-40%
+- blocked items older than 24h reduced significantly
+- rework caused by missing requirements reduced after intake standardization
+
+The main impact was operational reliability under variable event load.
+
+## 9. Lessons Learned
+
+Key lessons from this system:
+- In media operations, handoff clarity is often a stronger lever than editing speed.
+- A shared state model creates alignment faster than ad hoc coordination channels.
+- Exception paths should be designed explicitly; otherwise they silently become the default path.
+- Lightweight operational artifacts (state maps, interface tables, runbooks) are more durable than tool-specific conventions.
+
+The system confirmed that digital media delivery improves when the operation is treated as infrastructure, not as a sequence of isolated creative tasks.

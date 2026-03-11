@@ -1,0 +1,36 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f8fafc;
+  --surface: #ffffff;
+  --border: #e2e8f0;
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --accent: #2563eb;
+}
+
+@theme inline {
+  --font-sans: var(--font-manrope);
+  --font-mono: var(--font-plex-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--text-primary);
+  font-family: var(--font-manrope), "Segoe UI", sans-serif;
+}
+
+* {
+  border-color: var(--border);
+}
+
+code,
+pre,
+kbd,
+samp {
+  font-family: var(--font-mono), "Courier New", monospace;
+}
+
+::selection {
+  background: color-mix(in oklab, var(--accent), white 75%);
+}
