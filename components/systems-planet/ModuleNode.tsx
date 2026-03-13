@@ -8,12 +8,33 @@ import { ModuleData } from '@/lib/module-generator';
 
 function createModuleGeometry(panelKind: ModuleData['panelKind']): THREE.BufferGeometry {
   const sides = panelKind === 'pent' ? 5 : 6;
-  // Slightly stronger frustum profile (taper) to visually soften edge transitions.
   const topRadius = panelKind === 'pent' ? 0.53 : 0.58;
   const bottomRadius = panelKind === 'pent' ? 0.47 : 0.54;
   const geometry = new THREE.CylinderGeometry(topRadius, bottomRadius, 1, sides, 1, false);
   geometry.rotateX(Math.PI / 2);
   return geometry;
+}
+
+function createFaceNumberTexture(text: string): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas 2D context is not available');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = 'rgba(14, 116, 144, 0.16)';
+  ctx.fillRect(42, 42, 172, 172);
+  ctx.strokeStyle = 'rgba(125, 211, 252, 0.8)';
+  ctx.lineWidth = 4;
+  ctx.strokeRect(42, 42, 172, 172);
+  ctx.fillStyle = 'rgba(224, 242, 254, 0.95)';
+  ctx.font = '700 104px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, 128, 136);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  return texture;
 }
 
 interface ModuleNodeProps {
@@ -28,7 +49,7 @@ interface ModuleNodeProps {
   energyPhase: number;
   corePulse: number;
   onHover: (moduleId: string | null) => void;
-  onSelect: (moduleId: string) => void;
+  onSelect: (moduleId: string, clickPosition2D: { x: number; y: number }) => void;
   dynamicPosition: THREE.Vector3;
   onDragStart?: (moduleId: string) => void;
   onDragMove?: (moduleId: string, deltaX: number, deltaY: number) => void;
@@ -43,35 +64,10 @@ interface ModuleNodeProps {
       max: { x: number; y: number; z: number };
     };
   }) => void;
-}
-
-function createFaceNumberTexture(text: string): THREE.CanvasTexture {
-  const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 256;
-
-  const ctx = canvas.getContext('2d');
-  if (!ctx) {
-    throw new Error('Canvas 2D context is not available');
-  }
-
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = 'rgba(14, 116, 144, 0.16)';
-  ctx.fillRect(42, 42, 172, 172);
-
-  ctx.strokeStyle = 'rgba(125, 211, 252, 0.8)';
-  ctx.lineWidth = 4;
-  ctx.strokeRect(42, 42, 172, 172);
-
-  ctx.fillStyle = 'rgba(224, 242, 254, 0.95)';
-  ctx.font = '700 104px monospace';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(text, 128, 136);
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.needsUpdate = true;
-  return texture;
+  isSelected?: boolean;
+  index?: number;
+  totalModules?: number;
+  isBreathing?: boolean;
 }
 
 export function ModuleNode({
@@ -92,52 +88,51 @@ export function ModuleNode({
   onDragMove,
   onDragEnd,
   onMetricsReady,
+  isSelected = false,
+  index = 0,
+  totalModules = 1,
+  isBreathing = false,
 }: ModuleNodeProps) {
   const meshRef = useRef<Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>>(null);
+  const meshInnerRef = useRef<Mesh>(null);
+  // Eliminado electricRef, ya no se usa
+  const vaporRef = useRef<THREE.BufferGeometry>(null);
+  const vaporPositions = useMemo(() => new Float32Array(30), []);
+  const activationTimeRef = useRef<number | null>(null);
+
   const [hovered, setHovered] = useState(false);
   const [dragging, setDragging] = useState(false);
   const targetPositionRef = useRef(new THREE.Vector3());
   const lastPointerRef = useRef<{ x: number; y: number } | null>(null);
   const metricsReportedRef = useRef(false);
+
   const labelText = useMemo(() => String(Number(module.id.replace('module-', ''))), [module.id]);
   const faceNumberTexture = useMemo(() => createFaceNumberTexture(labelText), [labelText]);
   const normalArrow = useMemo(
     () => new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(), 0.15, 0x22d3ee, 0.03, 0.02),
     []
   );
-
   const scaleVector = useMemo(() => {
-    const widthRatio = 1;
-    const heightRatio = 1;
-    const depthRatio = 0.11;
-
     return new THREE.Vector3(
-      moduleScale * widthRatio * xyPacking.x,
-      moduleScale * heightRatio * xyPacking.y,
-      moduleScale * depthRatio
+      moduleScale * xyPacking.x,
+      moduleScale * xyPacking.y,
+      moduleScale * 0.11
     );
   }, [module.id, moduleScale, xyPacking.x, xyPacking.y]);
 
-  const panelColors = useMemo(() => {
-    return {
-      base: '#0a0a0c',
-      emissive: '#1e293b',
-      edge: hovered ? '#7fb7e6' : '#2b3a4f',
-      edgeOpacity: hovered ? 0.62 : 0.32,
-    };
-  }, [hovered]);
+  const panelColors = useMemo(() => ({
+    base: '#0a0a0c',
+    emissive: '#1e293b',
+    edge: isSelected ? '#00d5ff' : hovered ? '#7fb7e6' : '#2b3a4f',
+    edgeOpacity: isSelected ? 0.9 : hovered ? 0.62 : 0.32,
+  }), [hovered, isSelected]);
 
-  // Deterministic per-module geometry for a less cubic shell.
-  const geometry = useMemo(() => {
-    return createModuleGeometry(module.panelKind);
-  }, [module.panelKind]);
+  const geometry = useMemo(() => createModuleGeometry(module.panelKind), [module.panelKind]);
 
-  // Dispose geometry on unmount
   useEffect(() => {
     return () => {
       geometry.dispose();
       faceNumberTexture.dispose();
-
       normalArrow.line.geometry.dispose();
       (normalArrow.line.material as THREE.Material).dispose();
       normalArrow.cone.geometry.dispose();
@@ -146,140 +141,194 @@ export function ModuleNode({
   }, [faceNumberTexture, geometry, normalArrow]);
 
   useEffect(() => {
-    if (!dragging) {
-      return;
-    }
-
+    if (!dragging) return;
     const handleWindowPointerMove = (event: PointerEvent) => {
       const last = lastPointerRef.current;
       if (!last) {
         lastPointerRef.current = { x: event.clientX, y: event.clientY };
         return;
       }
-
-      const mouseDeltaX = event.clientX - last.x;
-      const mouseDeltaY = event.clientY - last.y;
-      lastPointerRef.current = { x: event.clientX, y: event.clientY };
-
-      onDragMove?.(module.id, mouseDeltaX, mouseDeltaY);
+      const canvas = document.querySelector('canvas');
+      if (canvas) {
+        const rect = canvas.getBoundingClientRect();
+        const normX = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        const normY = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+        lastPointerRef.current = { x: event.clientX, y: event.clientY };
+        onDragMove?.(module.id, normX, normY);
+      } else {
+        const mouseDeltaX = event.clientX - last.x;
+        const mouseDeltaY = event.clientY - last.y;
+        lastPointerRef.current = { x: event.clientX, y: event.clientY };
+        onDragMove?.(module.id, mouseDeltaX, mouseDeltaY);
+      }
     };
-
     const handleWindowPointerUp = () => {
       setDragging(false);
       lastPointerRef.current = null;
       onDragEnd?.(module.id);
     };
-
     window.addEventListener('pointermove', handleWindowPointerMove);
     window.addEventListener('pointerup', handleWindowPointerUp);
-
     return () => {
       window.removeEventListener('pointermove', handleWindowPointerMove);
       window.removeEventListener('pointerup', handleWindowPointerUp);
     };
   }, [dragging, module.id, onDragEnd, onDragMove]);
 
-  // Idle animation + hover effect
   useFrame(({ clock }) => {
-    if (meshRef.current) {
-      const time = clock.getElapsedTime();
+    if (!meshRef.current) return;
+    const time = clock.getElapsedTime();
 
-      // Position comes from shared shell simulation in ModulesLayer.
-      targetPositionRef.current.copy(dynamicPosition);
-      meshRef.current.position.copy(targetPositionRef.current);
+    // Posición y orientación
+    targetPositionRef.current.copy(dynamicPosition);
+    meshRef.current.position.copy(targetPositionRef.current);
+    meshRef.current.lookAt(0, 0, 0);
+    meshRef.current.rotateZ(presetRotation.z);
 
-      // Keep each module oriented toward the core.
-      meshRef.current.lookAt(0, 0, 0);
+    // Vibración
+    const vibPulse = 0.5 + Math.sin(time * 2.5) * 0.5;
+    const vib = impactVibration * vibPulse;
+    meshRef.current.rotateZ(
+      Math.sin(time * 30 + Number(module.id.replace('module-', '')) * 0.13) * 0.002 * vib
+    );
 
-      // Manual local orientation offset (twist) around module normal.
-      meshRef.current.rotateZ(presetRotation.z);
+    // Escala base
+    meshRef.current.scale.set(
+      scaleVector.x * presetScale.x,
+      scaleVector.y * presetScale.y,
+      scaleVector.z * presetScale.z
+    );
 
-      // Tesla impacts add subtle shell flex vibration scaled by local sine.
-      const vibPulse = 0.5 + Math.sin(time * 2.5) * 0.5;
-      const vib = impactVibration * vibPulse;
-      meshRef.current.rotateZ(
-        Math.sin(time * 30 + Number(module.id.replace('module-', '')) * 0.13) * 0.002 * vib
-      );
-
-      // Non-uniform scale profiles to sculpt a plate-like shell.
-      meshRef.current.scale.copy(scaleVector);
-      meshRef.current.scale.set(
-        meshRef.current.scale.x * presetScale.x,
-        meshRef.current.scale.y * presetScale.y,
-        meshRef.current.scale.z * presetScale.z
-      );
-
-      if (showNormals) {
-        const normalDirection = meshRef.current.position.clone().normalize();
-        normalArrow.position.copy(meshRef.current.position);
-        normalArrow.setDirection(normalDirection);
-      }
-
-      if (!metricsReportedRef.current && onMetricsReady) {
-        const bounds = new THREE.Box3().setFromObject(meshRef.current);
-        onMetricsReady({
-          id: module.id,
-          position: {
-            x: meshRef.current.position.x,
-            y: meshRef.current.position.y,
-            z: meshRef.current.position.z,
-          },
-          distanceToCore: meshRef.current.position.length(),
-          scale: {
-            x: meshRef.current.scale.x,
-            y: meshRef.current.scale.y,
-            z: meshRef.current.scale.z,
-          },
-          bounds: {
-            min: { x: bounds.min.x, y: bounds.min.y, z: bounds.min.z },
-            max: { x: bounds.max.x, y: bounds.max.y, z: bounds.max.z },
-          },
-        });
-        metricsReportedRef.current = true;
-      }
-
-      // Emissive intensity with subtle ambient pulse (reflecting crack energy)
-      const crackReflection = Math.sin(time * 0.4) * 0.05 + 0.15;
-      const passingEnergy = Math.max(0, Math.sin(time * 0.95 - energyPhase * 1.3)) * (0.14 * energyNearby);
-      const nearbyEnergy = energyNearby * 0.1;
-      const posLen = dynamicPosition.length();
-      const frontFactor = posLen > 0.001
-        ? THREE.MathUtils.clamp((dynamicPosition.z / posLen + 1) / 2, 0, 1)
-        : 0.5;
-      const beatEmissive = corePulse * 0.1 * frontFactor;
-      const material = meshRef.current.material;
-      material.emissiveIntensity = hovered ? 0.42 : (crackReflection + nearbyEnergy + passingEnergy + beatEmissive) * 0.62;
+    // Normales
+    if (showNormals) {
+      const normalDirection = meshRef.current.position.clone().normalize();
+      normalArrow.position.copy(meshRef.current.position);
+      normalArrow.setDirection(normalDirection);
     }
+
+    // Métricas
+    if (!metricsReportedRef.current && onMetricsReady) {
+      const bounds = new THREE.Box3().setFromObject(meshRef.current);
+      onMetricsReady({
+        id: module.id,
+        position: {
+          x: meshRef.current.position.x,
+          y: meshRef.current.position.y,
+          z: meshRef.current.position.z,
+        },
+        distanceToCore: meshRef.current.position.length(),
+        scale: {
+          x: meshRef.current.scale.x,
+          y: meshRef.current.scale.y,
+          z: meshRef.current.scale.z,
+        },
+        bounds: {
+          min: { x: bounds.min.x, y: bounds.min.y, z: bounds.min.z },
+          max: { x: bounds.max.x, y: bounds.max.y, z: bounds.max.z },
+        },
+      });
+      metricsReportedRef.current = true;
+    }
+
+    // Pulso emissive idle
+    const phase = (index / Math.max(1, totalModules)) * Math.PI * 2;
+    let pulse = 0.4 + Math.sin(time * 1.2 + phase) * 0.3;
+
+    // Respiración
+    if (isBreathing && !isSelected) {
+      meshRef.current.position.addScaledVector(
+        module.position.clone().normalize(),
+        Math.sin(time * 0.6) * 0.08
+      );
+      pulse = 0.6 + Math.sin(time * 0.6) * 0.4;
+
+      if (vaporRef.current) {
+        const normal = module.position.clone().normalize();
+        for (let i = 0; i < 10; i++) {
+          const t = (time * 0.4 + i * 0.3) % 1;
+          const angle = (i / 10) * Math.PI * 2;
+          vaporPositions[i * 3]     = module.position.x + normal.x * t * 0.3 + Math.cos(angle) * 0.05;
+          vaporPositions[i * 3 + 1] = module.position.y + normal.y * t * 0.3 + Math.sin(angle) * 0.05;
+          vaporPositions[i * 3 + 2] = module.position.z + normal.z * t * 0.3;
+        }
+        vaporRef.current.attributes.position.needsUpdate = true;
+      }
+    }
+
+    // Secuencia de activación
+    // Secuencia de activación
+    if (isSelected) {
+      if (activationTimeRef.current === null) {
+        activationTimeRef.current = time;
+      }
+      const elapsed = time - activationTimeRef.current;
+
+      // Fase 1: 0–300ms — glow inmediato
+      const glowPhase = Math.min(elapsed / 0.3, 1);
+      pulse = 0.1 + glowPhase * 0.9;
+
+      // Fase 2: 400ms+ — pulso lento orgánico (1.8s por ciclo)
+      if (elapsed > 0.4) {
+        const pulseTime = elapsed - 0.4;
+        const pulseFactor = 1 + Math.sin(pulseTime * (Math.PI * 2 / 1.8)) * 0.015;
+        meshRef.current.scale.set(
+          scaleVector.x * presetScale.x * pulseFactor,
+          scaleVector.y * presetScale.y * pulseFactor,
+          scaleVector.z * presetScale.z
+        );
+        pulse = 0.15 + Math.sin(pulseTime * (Math.PI * 2 / 1.8)) * 0.12;
+      }
+      // Fase 3: 700ms+ — electricidad en bordes (eliminado, bloom se encarga del halo)
+    } else {
+      activationTimeRef.current = null;
+    }
+
+    meshRef.current.material.emissiveIntensity = pulse;
   });
 
   const handlePointerDown = (e: ThreeEvent<PointerEvent>) => {
-    if (!e.ctrlKey) {
-      return;
-    }
-
     e.stopPropagation();
-    setDragging(true);
-    onSelect(module.id);
-    onDragStart?.(module.id);
-    lastPointerRef.current = {
-      x: e.clientX,
-      y: e.clientY,
-    };
+    if (e.ctrlKey) {
+      setDragging(true);
+      onDragStart?.(module.id);
+      lastPointerRef.current = { x: e.clientX, y: e.clientY };
+    }
   };
 
   const handlePointerUp = (e: ThreeEvent<PointerEvent>) => {
-    if (!dragging) {
-      return;
-    }
-
     e.stopPropagation();
-    setDragging(false);
-    lastPointerRef.current = null;
-    onDragEnd?.(module.id);
+    if (dragging) {
+      setDragging(false);
+      lastPointerRef.current = null;
+      onDragEnd?.(module.id);
+    }
+  };
+
+  const handlePanelToggle = (e: ThreeEvent<PointerEvent>) => {
+    e.stopPropagation();
+    const clickPosition2D = { x: e.clientX, y: e.clientY };
+    onSelect(module.id, clickPosition2D);
   };
 
   return (
     <>
+      {isBreathing && (
+        <points>
+          <bufferGeometry ref={vaporRef}>
+            <bufferAttribute
+              attach="attributes-position"
+              args={[vaporPositions, 3]}
+            />
+          </bufferGeometry>
+          <pointsMaterial
+            size={0.07}
+            color="#00d5ff"
+            transparent
+            opacity={0.4}
+            depthWrite={false}
+          />
+        </points>
+      )}
       <mesh
         ref={meshRef}
         geometry={geometry}
@@ -300,21 +349,18 @@ export function ModuleNode({
             onHover(null);
           }
         }}
-        onClick={(e) => {
-          e.stopPropagation();
-          onSelect(module.id);
-        }}
+        onClick={handlePanelToggle}
       >
         <meshStandardMaterial
-          color={panelColors.base}
+          color={isSelected ? '#001a22' : panelColors.base}
           roughness={0.72}
-          metalness={0.36}
-          emissive={panelColors.emissive}
+          metalness={0.55}
+          emissive={isSelected ? '#00d5ff' : panelColors.emissive}
           emissiveIntensity={0.1}
         />
 
-        {/* Edge highlight */}
-        <lineSegments>
+        {/* Bordes base */}
+        <lineSegments raycast={() => {}}>
           <edgesGeometry args={[geometry]} />
           <lineBasicMaterial
             color={panelColors.edge}
@@ -324,45 +370,36 @@ export function ModuleNode({
           />
         </lineSegments>
 
+        {/* Electricidad — aparece 700ms después de seleccionar */}
+        {isSelected && (
+          <lineSegments raycast={() => {}}>
+            <edgesGeometry args={[geometry]} />
+            <lineBasicMaterial
+              color={new THREE.Color(4, 4, 4)}
+              transparent={false}
+              toneMapped={false}
+            />
+          </lineSegments>
+        )}
+
         {/* Marco interior */}
         <mesh
-          position={[0, 0, 0.06]} // Ligeramente hacia afuera
+          raycast={() => {}}
+          position={[0, 0, 0.06]}
           scale={[0.75, 0.75, 1]}
           renderOrder={3}
+          ref={meshInnerRef}
+          onClick={handlePanelToggle}
         >
-          <primitive attach="geometry" object={geometry} />
-          <meshBasicMaterial
-            color={"#22d3ee"}
-            transparent
-            opacity={0.15 + 0.1 * corePulse}
-            depthWrite={false}
-            toneMapped={false}
+          <meshStandardMaterial
+            color={panelColors.base}
+            roughness={0.72}
+            metalness={0.36}
+            emissive={panelColors.emissive}
+            emissiveIntensity={0.1}
           />
-        </mesh>
-
-        {/* Placa central */}
-        <mesh
-          position={[0, 0, 0.03]} // Ligeramente hundida
-          scale={[0.55, 0.55, 1]}
-          renderOrder={4}
-        >
-          <primitive attach="geometry" object={geometry} />
-          <meshBasicMaterial
-            color={"#0d1117"}
-            transparent
-            opacity={0.98}
-            depthWrite={false}
-            toneMapped={false}
-          />
-        </mesh>
-
-        <mesh position={[0, 0, -0.515]} rotation={[0, Math.PI, 0]} renderOrder={2}>
-          <planeGeometry args={[0.48, 0.48]} />
-          <meshBasicMaterial map={faceNumberTexture} transparent depthWrite={false} />
         </mesh>
       </mesh>
-
-      {showNormals && <primitive object={normalArrow} />}
     </>
   );
 }
