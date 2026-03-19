@@ -45,9 +45,9 @@ interface ModulesLayerProps {
     pulse: number;
     version: number;
   } | null>;
-    onModuleHover: (moduleId: string | null) => void;
-    corePulse?: number;
-    onModuleSelect: (moduleId: string) => void;
+  onModuleHover: (moduleId: string | null) => void;
+  corePulse?: number;
+  onModuleSelect: (moduleId: string, clickPosition2D: { x: number; y: number }) => void;
   onModuleMetrics?: (metrics: {
     id: string;
     position: { x: number; y: number; z: number };
@@ -58,6 +58,9 @@ interface ModulesLayerProps {
       max: { x: number; y: number; z: number };
     };
   }) => void;
+  panelOpen?: boolean;
+  selectedModule?: string | null;
+  totalModules: number;
 }
 
 interface SecondaryPlateData {
@@ -380,9 +383,17 @@ export function ModulesLayer({
     if (orderedMode) {
       for (let i = 0; i < count; i++) {
         const locked = idealPositions[i];
-        positions[i].copy(locked);
-        const dir = locked.clone().normalize();
-        renderedPositions[i].copy(locked).addScaledVector(dir, pulseOffset * corePulse);
+        if (positions[i] && locked) {
+          positions[i].copy(locked);
+        } else {
+          console.warn('positions[i] o locked undefined en modo ordered', { i, positionsLen: positions.length, idealPositionsLen: idealPositions.length });
+        }
+        const dir = locked ? locked.clone().normalize() : new THREE.Vector3(0,0,1);
+        if (renderedPositions[i] && locked) {
+          renderedPositions[i].copy(locked).addScaledVector(dir, pulseOffset * corePulse);
+        } else {
+          console.warn('renderedPositions[i] o locked undefined en modo ordered', { i, renderedPositionsLen: renderedPositions.length, idealPositionsLen: idealPositions.length });
+        }
         radialKickRef.current[i] = THREE.MathUtils.lerp(radialKickRef.current[i] ?? 0, 0, 0.12);
         vibrationRef.current[i] = THREE.MathUtils.lerp(vibrationRef.current[i] ?? 0, 0, 0.12);
       }
@@ -420,7 +431,15 @@ export function ModulesLayer({
         continue;
       }
 
-      dirs[i].lerp(idealDirs[i], driftStrength).normalize();
+      // Validación robusta para evitar TypeError
+      if (dirs[i] && idealDirs[i]) {
+        dirs[i].lerp(idealDirs[i], driftStrength).normalize();
+      } else {
+        // Si hay inconsistencia, loguea para depurar
+        if (!dirs[i] || !idealDirs[i]) {
+          console.warn('Inconsistencia en simulación: dirs[i] o idealDirs[i] undefined', { i, dirsLen: dirs.length, idealDirsLen: idealDirs.length });
+        }
+      }
 
       if (orderedMode) {
         const anchor = domainAnchors.get(modules[i].domain);
@@ -656,6 +675,7 @@ export function ModulesLayer({
           onDragMove={handleDragMove}
           onDragEnd={handleDragEnd}
           corePulse={corePulse}
+          isSelected={module.id === selectedModuleId}
         />
           );
         })()

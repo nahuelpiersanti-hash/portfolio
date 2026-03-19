@@ -1,6 +1,9 @@
 ﻿'use client';
 
 import { useMemo, useState } from 'react';
+// import { ModulePanel } from '@/components/systems-planet/ModulePanel';
+import { ModuleOverlay } from '@/components/systems-planet/ModuleOverlay';
+import { moduleContentMap } from '@/lib/module-content';
 import { SystemsPlanetCanvas } from '@/components/systems-planet';
 import { generateModulePositions, PLANET_SPHERE_RADIUS } from '@/lib/module-generator';
 
@@ -80,117 +83,100 @@ function createDefaultModulePreset(): ModulePreset {
     rotation: { x: 0, y: 0, z: 0 },
   };
 }
-
-export default function SystemsPlanetPage() {
+function Page() {
   const [hoveredDomain, setHoveredDomain] = useState<string | null>(null);
   const [hoveredModule, setHoveredModule] = useState<string | null>(null);
   const [selectedModule, setSelectedModule] = useState<string | null>(null);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [overlayOrigin, setOverlayOrigin] = useState<{ x: number; y: number } | null>(null);
 
+  // Panel toggle handler
+  const handleModuleSelect = (moduleId: string, clickPosition2D: { x: number; y: number }) => {
+    console.log('handleModuleSelect fired:', moduleId, clickPosition2D);
+    setOverlayOrigin(clickPosition2D);
+    if (selectedModule === moduleId && panelOpen) {
+      setPanelOpen(false);
+      setTimeout(() => setSelectedModule(null), 380);
+    } else {
+      setSelectedModule(moduleId);
+      setPanelOpen(true);
+    }
+  };
   const modules = useMemo(() => generateModulePositions(0.32, PLANET_SPHERE_RADIUS), []);
 
   const modulePresets = useMemo(() => {
     const map: Record<string, ModulePreset> = {};
-
     modules.forEach((module) => {
       const defaultPreset = createDefaultModulePreset();
       const frozenPreset = FROZEN_MODULE_PRESETS[module.id];
-
-      if (!frozenPreset) {
-        map[module.id] = defaultPreset;
-        return;
-      }
-
-      map[module.id] = {
-        enabled: frozenPreset.enabled,
-        scale: {
-          x: frozenPreset.scale.x,
-          y: frozenPreset.scale.y,
-          z: frozenPreset.scale.z,
-        },
-        rotation: {
-          x: frozenPreset.rotation.x,
-          y: frozenPreset.rotation.y,
-          z: frozenPreset.rotation.z,
-        },
-      };
+      map[module.id] = frozenPreset || defaultPreset;
     });
-
     return map;
   }, [modules]);
 
-  const hoveredModuleData = hoveredModule
-    ? modules.find((module) => module.id === hoveredModule)
-    : null;
+  // Handler para cerrar panel al hacer click fuera
+  const handlePanelClose = () => {
+    setPanelOpen(false);
+    setTimeout(() => setSelectedModule(null), 380);
+  };
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden bg-slate-950">
-      <div
-        className="absolute inset-0"
-        style={{ cursor: hoveredDomain || hoveredModule ? 'pointer' : 'grab' }}
-      >
-        <SystemsPlanetCanvas
-          onDomainHover={setHoveredDomain}
-          onDomainSelect={() => {}}
-          onModuleHover={setHoveredModule}
-          onModuleSelect={setSelectedModule}
-          pulseIntensity={FROZEN_REACTOR.pulseIntensity}
-          pulseTimeScale={FROZEN_REACTOR.pulseTimeScale}
-          orderedMode={FROZEN_REACTOR.orderedMode}
-          pauseBlocks={FROZEN_REACTOR.pauseBlocks}
-          visibleModules={modules.length}
-          rotateScene={FROZEN_REACTOR.rotateScene}
-          selectedModuleId={selectedModule}
-          designMode={FROZEN_REACTOR.designMode}
-          showNormals={FROZEN_REACTOR.showNormals}
-          shellTuning={FROZEN_SHELL_TUNING}
-          modulePresets={modulePresets}
-        />
-      </div>
-
-      <div className="pointer-events-none absolute inset-0">
-        <div className="absolute left-8 top-8">
-          <h1 className="text-sm font-medium tracking-wide text-white/80">Systems Planet</h1>
-          <p className="mt-1 text-xs text-white/50">Interactive Portfolio</p>
-        </div>
-
-        <div className="absolute bottom-8 left-8 max-w-xs">
-          <div className="rounded-lg border border-white/10 bg-slate-900/80 p-4 backdrop-blur-sm">
-            <p className="text-xs leading-relaxed text-white/70">
-              <strong className="text-white/90">Interact:</strong> Drag to rotate, hover modules to
-              reveal systems, click to explore.
-            </p>
-          </div>
-        </div>
-
-        {hoveredModuleData && (
-          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-            <div className="animate-in fade-in zoom-in-95 duration-200 rounded-lg border border-white/20 bg-slate-900/90 px-6 py-3 backdrop-blur-sm">
-              <p className="text-xl font-medium text-white">{hoveredModuleData.label}</p>
-              <p className="mt-1 text-xs text-white/50 capitalize">
-                {hoveredModuleData.domain.replace(/-/g, ' ')} - {hoveredModuleData.size}
-              </p>
-            </div>
-          </div>
-        )}
-
-        {hoveredDomain && !hoveredModule && (
-          <div className="absolute left-1/2 top-1/3 -translate-x-1/2">
-            <div className="animate-in fade-in zoom-in-95 duration-200 rounded-lg border border-white/10 bg-slate-900/70 px-4 py-2 backdrop-blur-sm">
-              <p className="text-sm font-medium text-white/80">{hoveredDomain}</p>
-            </div>
-          </div>
-        )}
-
-        {selectedModule && (
-          <div className="absolute right-8 top-8">
-            <div className="rounded-lg border border-emerald-500/30 bg-emerald-900/80 p-4 backdrop-blur-sm">
-              <p className="text-xs text-emerald-100">
-                <strong>Selected:</strong> {modules.find((module) => module.id === selectedModule)?.label}
-              </p>
-            </div>
+    <div className="relative h-screen w-screen overflow-hidden bg-black">
+      <SystemsPlanetCanvas
+        onModuleSelect={handleModuleSelect}
+        onModuleHover={setHoveredModule}
+        selectedModule={selectedModule}
+        panelOpen={panelOpen}
+        modulePresets={modulePresets}
+        onDomainHover={setHoveredDomain}
+        onDomainSelect={setHoveredDomain}
+        pulseIntensity={FROZEN_REACTOR.pulseIntensity}
+        pulseTimeScale={FROZEN_REACTOR.pulseTimeScale}
+        orderedMode={FROZEN_REACTOR.orderedMode}
+        pauseBlocks={FROZEN_REACTOR.pauseBlocks}
+        visibleModules={modules.length}
+        rotateScene={panelOpen ? false : FROZEN_REACTOR.rotateScene}
+        selectedModuleId={selectedModule}
+        designMode={FROZEN_REACTOR.designMode}
+        showNormals={FROZEN_REACTOR.showNormals}
+        shellTuning={FROZEN_SHELL_TUNING}
+        // ...otros props necesarios...
+      />
+      {panelOpen && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(2, 11, 18, 0.6)',
+          backdropFilter: 'blur(2px)',
+          zIndex: 39,
+          pointerEvents: 'none',
+          transition: 'background 0.4s ease',
+        }} />
+      )}
+      <div style={{ position: 'absolute', inset: 0, zIndex: 40, pointerEvents: 'none' }}>
+        {panelOpen && selectedModule && overlayOrigin && (
+          <div style={{ pointerEvents: 'auto' }}>
+            <ModuleOverlay
+              moduleId={selectedModule}
+              content={{
+                ...moduleContentMap[selectedModule],
+                index: String(moduleContentMap[selectedModule]?.index ?? selectedModule ?? ''),
+                title: String(moduleContentMap[selectedModule]?.title ?? selectedModule ?? ''),
+                type: String(moduleContentMap[selectedModule]?.type ?? 'Module'),
+                category: moduleContentMap[selectedModule]?.category ?? 'System Module',
+                problem: moduleContentMap[selectedModule]?.problem ?? 'Content coming soon.',
+                system: moduleContentMap[selectedModule]?.system ?? 'Content coming soon.',
+                capabilities: moduleContentMap[selectedModule]?.capabilities ?? [],
+                result: moduleContentMap[selectedModule]?.result ?? 'Content coming soon.',
+                connectedModules: moduleContentMap[selectedModule]?.connectedModules ?? [],
+              }}
+              onClose={handlePanelClose}
+            />
           </div>
         )}
       </div>
     </div>
   );
 }
+
+export default Page;

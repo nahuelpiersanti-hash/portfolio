@@ -93,9 +93,10 @@ export function ModuleNode({
   totalModules = 1,
   isBreathing = false,
 }: ModuleNodeProps) {
-  const meshRef = useRef<Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>>(null);
+  // CylinderGeometry grupos: 0 = laterales, 1 = tapa superior (cara frontal), 2 = tapa inferior (cara trasera)
+  // Después de rotateX(Math.PI/2): grupo 1 = cara que mira hacia afuera (frontal), grupo 0 = laterales
+  const meshRef = useRef<Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial[]>>(null);
   const meshInnerRef = useRef<Mesh>(null);
-  // Eliminado electricRef, ya no se usa
   const vaporRef = useRef<THREE.BufferGeometry>(null);
   const vaporPositions = useMemo(() => new Float32Array(30), []);
   const activationTimeRef = useRef<number | null>(null);
@@ -129,16 +130,49 @@ export function ModuleNode({
 
   const geometry = useMemo(() => createModuleGeometry(module.panelKind), [module.panelKind]);
 
+  // Material lateral — recibe el emissive cyan al seleccionar
+  const matSide = useMemo(() => new THREE.MeshStandardMaterial({
+    color: new THREE.Color('#0a0a0c'),
+    roughness: 0.72,
+    metalness: 0.55,
+    emissive: new THREE.Color('#1e293b'),
+    emissiveIntensity: 0.1,
+  }), []);
+
+  // Material cara frontal — siempre oscuro, es la "cubierta" de la placa
+  const matFront = useMemo(() => new THREE.MeshStandardMaterial({
+    color: new THREE.Color('#080a0c'),
+    roughness: 0.85,
+    metalness: 0.3,
+    emissive: new THREE.Color('#0a0f14'),
+    emissiveIntensity: 0.05,
+  }), []);
+
+  // Material cara trasera — invisible, apunta hacia el núcleo
+  const matBack = useMemo(() => new THREE.MeshStandardMaterial({
+    color: new THREE.Color('#050507'),
+    roughness: 1,
+    metalness: 0,
+    emissive: new THREE.Color('#000000'),
+    emissiveIntensity: 0,
+  }), []);
+
+  // Array de materiales: [laterales, frontal, trasera]
+  const materials = useMemo(() => [matSide, matFront, matBack], [matSide, matFront, matBack]);
+
   useEffect(() => {
     return () => {
       geometry.dispose();
       faceNumberTexture.dispose();
+      matSide.dispose();
+      matFront.dispose();
+      matBack.dispose();
       normalArrow.line.geometry.dispose();
       (normalArrow.line.material as THREE.Material).dispose();
       normalArrow.cone.geometry.dispose();
       (normalArrow.cone.material as THREE.Material).dispose();
     };
-  }, [faceNumberTexture, geometry, normalArrow]);
+  }, [faceNumberTexture, geometry, matSide, matFront, matBack, normalArrow]);
 
   useEffect(() => {
     if (!dragging) return;
@@ -230,7 +264,7 @@ export function ModuleNode({
       metricsReportedRef.current = true;
     }
 
-    // Pulso emissive idle
+    // Pulso emissive idle — solo en matSide
     const phase = (index / Math.max(1, totalModules)) * Math.PI * 2;
     let pulse = 0.4 + Math.sin(time * 1.2 + phase) * 0.3;
 
@@ -255,19 +289,22 @@ export function ModuleNode({
       }
     }
 
-    // Secuencia de activación
-    // Secuencia de activación
+    // Secuencia de activación — solo afecta matSide
     if (isSelected) {
       if (activationTimeRef.current === null) {
         activationTimeRef.current = time;
       }
       const elapsed = time - activationTimeRef.current;
 
-      // Fase 1: 0–300ms — glow inmediato
+      // Fase 1: 0–300ms — glow inmediato en laterales
       const glowPhase = Math.min(elapsed / 0.3, 1);
       pulse = 0.1 + glowPhase * 0.9;
 
-      // Fase 2: 400ms+ — pulso lento orgánico (1.8s por ciclo)
+      // Actualizar color emissive del lateral a cyan
+      matSide.emissive.set('#00d5ff');
+      matSide.color.set('#001a22');
+
+      // Fase 2: 400ms+ — pulso lento orgánico
       if (elapsed > 0.4) {
         const pulseTime = elapsed - 0.4;
         const pulseFactor = 1 + Math.sin(pulseTime * (Math.PI * 2 / 1.8)) * 0.015;
@@ -278,12 +315,17 @@ export function ModuleNode({
         );
         pulse = 0.15 + Math.sin(pulseTime * (Math.PI * 2 / 1.8)) * 0.12;
       }
-      // Fase 3: 700ms+ — electricidad en bordes (eliminado, bloom se encarga del halo)
     } else {
-      activationTimeRef.current = null;
+      // Reset al deseleccionar
+      if (activationTimeRef.current !== null) {
+        matSide.emissive.set('#1e293b');
+        matSide.color.set('#0a0a0c');
+        activationTimeRef.current = null;
+      }
     }
 
-    meshRef.current.material.emissiveIntensity = pulse;
+    // Aplicar pulse solo al lateral
+    matSide.emissiveIntensity = pulse;
   });
 
   const handlePointerDown = (e: ThreeEvent<PointerEvent>) => {
@@ -332,6 +374,7 @@ export function ModuleNode({
       <mesh
         ref={meshRef}
         geometry={geometry}
+        material={materials}
         position={module.position}
         castShadow
         receiveShadow
@@ -351,14 +394,6 @@ export function ModuleNode({
         }}
         onClick={handlePanelToggle}
       >
-        <meshStandardMaterial
-          color={isSelected ? '#001a22' : panelColors.base}
-          roughness={0.72}
-          metalness={0.55}
-          emissive={isSelected ? '#00d5ff' : panelColors.emissive}
-          emissiveIntensity={0.1}
-        />
-
         {/* Bordes base */}
         <lineSegments raycast={() => {}}>
           <edgesGeometry args={[geometry]} />
@@ -370,12 +405,12 @@ export function ModuleNode({
           />
         </lineSegments>
 
-        {/* Electricidad — aparece 700ms después de seleccionar */}
+        {/* Brillo de bordes cuando seleccionado */}
         {isSelected && (
           <lineSegments raycast={() => {}}>
             <edgesGeometry args={[geometry]} />
             <lineBasicMaterial
-              color={new THREE.Color(4, 4, 4)}
+              color={new THREE.Color(2, 2, 2)}
               transparent={false}
               toneMapped={false}
             />

@@ -15,7 +15,7 @@ interface PlanetSphereProps {
   onDomainHover: (domainName: string | null) => void;
   onDomainSelect: (domainId: string) => void;
   onModuleHover: (moduleId: string | null) => void;
-  onModuleSelect: (moduleId: string) => void;
+  onModuleSelect: (moduleId: string, clickPosition2D: { x: number; y: number }) => void;
   pulseIntensity: number;
   pulseTimeScale: number;
   orderedMode: boolean;
@@ -38,7 +38,11 @@ interface PlanetSphereProps {
     scale: { x: number; y: number; z: number };
     rotation: { x: number; y: number; z: number };
   }>;
+  panelOpen?: boolean;
+  selectedModule?: string | null;
 }
+
+export { PlanetSphere };
 
 interface RuntimeModuleMetrics {
   id: string;
@@ -153,7 +157,7 @@ function estimateSurfaceCoverage(
   };
 }
 
-export function PlanetSphere({ 
+function PlanetSphere({
   onDomainHover, 
   onDomainSelect,
   onModuleHover,
@@ -169,6 +173,8 @@ export function PlanetSphere({
   showNormals,
   shellTuning,
   modulePresets,
+  panelOpen,
+  selectedModule,
 }: PlanetSphereProps) {
   const coreRadius = 0.32;
   const groupRef = useRef<Group>(null);
@@ -315,10 +321,16 @@ export function PlanetSphere({
     }
   }, [modules.length, printMetrics]);
 
-  // Slow ambient rotation
-  useFrame(() => {
-    if (groupRef.current && rotateScene) {
-      groupRef.current.rotation.y += 0.001;
+  // Slow ambient rotation y respiración
+  useFrame(({ clock }) => {
+    if (groupRef.current) {
+      // Respiración
+      const breathe = 1 + Math.sin(clock.getElapsedTime() * 0.8) * 0.025;
+      groupRef.current.scale.setScalar(breathe);
+      // Rotación
+      if (rotateScene) {
+        groupRef.current.rotation.y += 0.001;
+      }
     }
   });
 
@@ -398,6 +410,9 @@ export function PlanetSphere({
         onModuleHover={onModuleHover}
         onModuleSelect={onModuleSelect}
         onModuleMetrics={handleModuleMetrics}
+        panelOpen={panelOpen}
+        selectedModule={selectedModule}
+        totalModules={modules.length}
       />
     </group>
   );
