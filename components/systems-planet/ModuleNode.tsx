@@ -6,12 +6,61 @@ import { useFrame, ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';
 import { ModuleData } from '@/lib/module-generator';
 
-function createModuleGeometry(panelKind: ModuleData['panelKind']): THREE.BufferGeometry {
+/**
+ * Bisel de las placas. Los valores son relativos al polígono local (radio ~0.5-0.6).
+ * bevelOffset = -bevelSize mantiene el footprint exterior igual al original,
+ * de modo que el espaciado acomodado de los módulos no cambia.
+ */
+const MODULE_BEVEL = {
+  thickness: 0.025,
+  size: 0.045,
+  offset: -0.045,
+  segments: 4,
+} as const;
+
+function createRegularPolygonShape(panelKind: ModuleData['panelKind']): THREE.Shape {
   const sides = panelKind === 'pent' ? 5 : 6;
-  const topRadius = panelKind === 'pent' ? 0.53 : 0.58;
-  const bottomRadius = panelKind === 'pent' ? 0.47 : 0.54;
-  const geometry = new THREE.CylinderGeometry(topRadius, bottomRadius, 1, sides, 1, false);
-  geometry.rotateX(Math.PI / 2);
+  const radius = panelKind === 'pent' ? 0.53 : 0.58;
+  const shape = new THREE.Shape();
+  const step = (Math.PI * 2) / sides;
+
+  for (let i = 0; i < sides; i++) {
+    const angle = i * step - Math.PI / 2;
+    const x = Math.cos(angle) * radius;
+    const y = Math.sin(angle) * radius;
+
+    if (i === 0) {
+      shape.moveTo(x, y);
+    } else {
+      shape.lineTo(x, y);
+    }
+  }
+
+  shape.closePath();
+  return shape;
+}
+
+function createModuleGeometry(panelKind: ModuleData['panelKind']): THREE.BufferGeometry {
+  const geometry = new THREE.ExtrudeGeometry(createRegularPolygonShape(panelKind), {
+    depth: 1,
+    steps: 1,
+    bevelEnabled: true,
+    bevelThickness: MODULE_BEVEL.thickness,
+    bevelSize: MODULE_BEVEL.size,
+    bevelOffset: MODULE_BEVEL.offset,
+    bevelSegments: MODULE_BEVEL.segments,
+  });
+  geometry.translate(0, 0, -0.5);
+  return geometry;
+}
+
+function createModuleEdgeGeometry(panelKind: ModuleData['panelKind']): THREE.BufferGeometry {
+  const geometry = new THREE.ExtrudeGeometry(createRegularPolygonShape(panelKind), {
+    depth: 1,
+    steps: 1,
+    bevelEnabled: false,
+  });
+  geometry.translate(0, 0, -0.5);
   return geometry;
 }
 
@@ -129,6 +178,7 @@ export function ModuleNode({
   }), [hovered, isSelected]);
 
   const geometry = useMemo(() => createModuleGeometry(module.panelKind), [module.panelKind]);
+  const edgeGeometry = useMemo(() => createModuleEdgeGeometry(module.panelKind), [module.panelKind]);
 
   // Material lateral — recibe el emissive cyan al seleccionar
   const matSide = useMemo(() => new THREE.MeshStandardMaterial({
@@ -163,6 +213,7 @@ export function ModuleNode({
   useEffect(() => {
     return () => {
       geometry.dispose();
+      edgeGeometry.dispose();
       faceNumberTexture.dispose();
       matSide.dispose();
       matFront.dispose();
@@ -172,7 +223,7 @@ export function ModuleNode({
       normalArrow.cone.geometry.dispose();
       (normalArrow.cone.material as THREE.Material).dispose();
     };
-  }, [faceNumberTexture, geometry, matSide, matFront, matBack, normalArrow]);
+  }, [edgeGeometry, faceNumberTexture, geometry, matSide, matFront, matBack, normalArrow]);
 
   useEffect(() => {
     if (!dragging) return;
@@ -396,7 +447,7 @@ export function ModuleNode({
       >
         {/* Bordes base */}
         <lineSegments raycast={() => {}}>
-          <edgesGeometry args={[geometry]} />
+          <edgesGeometry args={[edgeGeometry]} />
           <lineBasicMaterial
             color={panelColors.edge}
             transparent
@@ -408,7 +459,7 @@ export function ModuleNode({
         {/* Brillo de bordes cuando seleccionado */}
         {isSelected && (
           <lineSegments raycast={() => {}}>
-            <edgesGeometry args={[geometry]} />
+            <edgesGeometry args={[edgeGeometry]} />
             <lineBasicMaterial
               color={new THREE.Color(2, 2, 2)}
               transparent={false}
