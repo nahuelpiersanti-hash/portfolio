@@ -104,6 +104,11 @@ function Page() {
   };
   const modules = useMemo(() => generateModulePositions(0.32, PLANET_SPHERE_RADIUS), []);
 
+  const contentForModule = (moduleId: string | null) => {
+    const label = modules.find((m) => m.id === moduleId)?.label ?? '';
+    return moduleContentMap[label] ?? moduleContentMap[moduleId ?? ''] ?? null;
+  };
+
   const modulePresets = useMemo(() => {
     const map: Record<string, ModulePreset> = {};
     modules.forEach((module) => {
@@ -159,16 +164,16 @@ function Page() {
             <ModuleOverlay
               moduleId={selectedModule}
               content={{
-                ...moduleContentMap[selectedModule],
-                index: String(moduleContentMap[selectedModule]?.index ?? selectedModule ?? ''),
-                title: String(moduleContentMap[selectedModule]?.title ?? selectedModule ?? ''),
-                type: String(moduleContentMap[selectedModule]?.type ?? 'Module'),
-                category: moduleContentMap[selectedModule]?.category ?? 'System Module',
-                problem: moduleContentMap[selectedModule]?.problem ?? 'Content coming soon.',
-                system: moduleContentMap[selectedModule]?.system ?? 'Content coming soon.',
-                capabilities: moduleContentMap[selectedModule]?.capabilities ?? [],
-                result: moduleContentMap[selectedModule]?.result ?? 'Content coming soon.',
-                connectedModules: moduleContentMap[selectedModule]?.connectedModules ?? [],
+                ...contentForModule(selectedModule),
+                index: String(contentForModule(selectedModule)?.index ?? selectedModule ?? ''),
+                title: String(contentForModule(selectedModule)?.title ?? selectedModule ?? ''),
+                type: String(contentForModule(selectedModule)?.type ?? 'Module'),
+                category: contentForModule(selectedModule)?.category ?? 'System Module',
+                problem: contentForModule(selectedModule)?.problem ?? 'Content coming soon.',
+                system: contentForModule(selectedModule)?.system ?? 'Content coming soon.',
+                capabilities: contentForModule(selectedModule)?.capabilities ?? [],
+                result: contentForModule(selectedModule)?.result ?? 'Content coming soon.',
+                connectedModules: contentForModule(selectedModule)?.connectedModules ?? [],
               }}
               onClose={handlePanelClose}
             />
